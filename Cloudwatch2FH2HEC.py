@@ -1,5 +1,6 @@
 """
-For processing data sent to Firehose by Cloudwatch Logs subscription filters. 
+For processing data sent to Firehose by Cloudwatch Logs subscription filters.
+
 Additional processing of message into format for Splunk HTTP Event Collector - Event input (not Raw)
 
 Cloudwatch Logs sends to Firehose records that look like this:
@@ -54,31 +55,30 @@ import boto3
 import os
 
 
-def transformLogEvent(log_event,acct,reg,loggrp,logstrm):
+def transformLogEvent(log_event,acct,arn,loggrp,logstrm):
     """Transform each log event.
 
-    The implementation below places the message into Splunk Event JSON format, includes the details in the arguments and appends new line
-    Note that Splunk Index could be additional argument taken from a Lambda function variable, but this implementation does not override the HEC settings defined on Splunk end.
+    The default implementation below just extracts the message and appends a newline to it.
 
     Args:
     log_event (dict): The original log event. Structure is {"id": str, "timestamp": long, "message": str}
     acct: The aws account from where the Cloudwatch event came from
-    reg: The region for the Stream (may differ from Cloudwatch Log as its taken from Stream ARN)
+    arn: The ARN of the Kinesis Stream
     loggrp: The Cloudwatch log group name
     logstrm: The Cloudwatch logStream (not used below)
-
     Returns:
     str: The transformed log event.
     """
-
-    return_message = '{"time": ' + str(log_event['timestamp']) + ',"host": "' + acct  +'","source": "' +reg+':' + loggrp + '"'
+    # note that the region_name is taken from the region for the Stream - this may differ from the Cloudwatch Log if subscription from another account
+    region_name=arn.split(':')[3]
+    return_message = '{"time": ' + str(log_event['timestamp']) + ',"host": "' + arn  +'","source": "' + region_name +':' + loggrp + '"'
     return_message = return_message + ',"sourcetype":"' + os.environ['SPLUNK_SOURCETYPE']  + '"'
     return_message = return_message + ',"event": ' + json.dumps(log_event['message']) + '}\n'
 
     return return_message + '\n'
 
 
-def processRecords(records,region_name):
+def processRecords(records,arn):
     for r in records:
         data = base64.b64decode(r['data'])
         striodata = StringIO.StringIO(data)
@@ -96,7 +96,7 @@ def processRecords(records,region_name):
                 'recordId': recId
             }
         elif data['messageType'] == 'DATA_MESSAGE':
-            data = ''.join([transformLogEvent(e,data['owner'],region_name,data['logGroup'],data['logStream']) for e in data['logEvents']])
+            data = ''.join([transformLogEvent(e,data['owner'],arn,data['logGroup'],data['logStream']) for e in data['logEvents']])
             data = base64.b64encode(data)
             yield {
                 'data': data,
@@ -195,7 +195,7 @@ def handler(event, context):
     streamARN = event['sourceKinesisStreamArn'] if isSas else event['deliveryStreamArn']
     region = streamARN.split(':')[3]
     streamName = streamARN.split('/')[1]
-    records = list(processRecords(event['records'],region))
+    records = list(processRecords(event['records'],streamARN))
     projectedSize = 0
     dataByRecordId = {rec['recordId']: createReingestionRecord(isSas, rec) for rec in event['records']}
     putRecordBatches = []
