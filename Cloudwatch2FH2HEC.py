@@ -65,9 +65,18 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
     acct: The aws account from where the Cloudwatch event came from
     arn: The ARN of the Kinesis Stream
     loggrp: The Cloudwatch log group name
-    logstrm: The Cloudwatch logStream (not used below, but could be used for setting sourcetype/index)
+    logstrm: The Cloudwatch logStream name (not used below)
+    filterName: The Cloudwatch Subscription filter for the Stream
     Returns:
     str: The transformed log event.
+        In the case below, Splunk event details are set as:
+        time = event time for the Cloudwatch Log
+        host = ARN of Firehose
+        source = filterName (of cloudwatch Log) contatinated with LogGroup Name
+        sourcetype is set as -
+            aws:cloudtrail if the Log Group name contains CloudTrail
+            aws:cloudwatchlogs:vpcflow if the Log Group name contains VPC
+            the environment variable contents of SPLUNK_SOURCETYPE for all other cases
     """
     
     # note that the region_name is taken from the region for the Stream, this won't change if Cloudwatch from another account/region
