@@ -55,7 +55,7 @@ import boto3
 import os
 
 
-def transformLogEvent(log_event,acct,arn,loggrp,logstrm):
+def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
     """Transform each log event.
 
     The default implementation below just extracts the message and appends a newline to it.
@@ -65,14 +65,23 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm):
     acct: The aws account from where the Cloudwatch event came from
     arn: The ARN of the Kinesis Stream
     loggrp: The Cloudwatch log group name
-    logstrm: The Cloudwatch logStream (not used below)
+    logstrm: The Cloudwatch logStream (not used below, but could be used for setting sourcetype/index)
     Returns:
     str: The transformed log event.
     """
-    # note that the region_name is taken from the region for the Stream (Stream and subscription must be same region)
+    
+    # note that the region_name is taken from the region for the Stream, this won't change if Cloudwatch from another account/region
     region_name=arn.split(':')[3]
-    return_message = '{"time": ' + str(log_event['timestamp']) + ',"host": "' + arn  +'","source": "' + region_name +':' + loggrp + '"'
-    return_message = return_message + ',"sourcetype":"' + os.environ['SPLUNK_SOURCETYPE']  + '"'
+    
+    if "CloudTrail" in loggrp:
+        sourcetype="aws:cloudtrail"
+    elif "VPC" in loggrp:
+        sourcetype="aws:cloudwatchlogs:vpcflow"
+    else:
+        sourcetype=os.environ['SPLUNK_SOURCETYPE']
+    
+    return_message = '{"time": ' + str(log_event['timestamp']) + ',"host": "' + arn  +'","source": "' + filterName +':' + loggrp + '"'
+    return_message = return_message + ',"sourcetype":"' + sourcetype  + '"'
     return_message = return_message + ',"event": ' + json.dumps(log_event['message']) + '}\n'
 
     return return_message + '\n'
@@ -96,7 +105,7 @@ def processRecords(records,arn):
                 'recordId': recId
             }
         elif data['messageType'] == 'DATA_MESSAGE':
-            data = ''.join([transformLogEvent(e,data['owner'],arn,data['logGroup'],data['logStream']) for e in data['logEvents']])
+            data = ''.join([transformLogEvent(e,data['owner'],arn,data['logGroup'],data['logStream'],data['subscriptionFilters'][0]) for e in data['logEvents']])
             data = base64.b64encode(data)
             yield {
                 'data': data,
@@ -195,6 +204,7 @@ def handler(event, context):
     streamARN = event['sourceKinesisStreamArn'] if isSas else event['deliveryStreamArn']
     region = streamARN.split(':')[3]
     streamName = streamARN.split('/')[1]
+    
     records = list(processRecords(event['records'],streamARN))
     projectedSize = 0
     dataByRecordId = {rec['recordId']: createReingestionRecord(isSas, rec) for rec in event['records']}
