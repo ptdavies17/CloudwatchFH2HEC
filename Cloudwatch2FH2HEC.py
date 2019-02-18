@@ -69,7 +69,7 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm):
     Returns:
     str: The transformed log event.
     """
-    # note that the region_name is taken from the region for the Stream - this may differ from the Cloudwatch Log if subscription from another account
+    # note that the region_name is taken from the region for the Stream (Stream and subscription must be same region)
     region_name=arn.split(':')[3]
     return_message = '{"time": ' + str(log_event['timestamp']) + ',"host": "' + arn  +'","source": "' + region_name +':' + loggrp + '"'
     return_message = return_message + ',"sourcetype":"' + os.environ['SPLUNK_SOURCETYPE']  + '"'
