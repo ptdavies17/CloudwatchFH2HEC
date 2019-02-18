@@ -79,9 +79,8 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
             the environment variable contents of SPLUNK_SOURCETYPE for all other cases
     """
     
-    # note that the region_name is taken from the region for the Stream, this won't change if Cloudwatch from another account/region
     region_name=arn.split(':')[3]
-    
+    # note that the region_name is taken from the region for the Stream, this won't change if Cloudwatch from another account/region. Not used for this example function
     if "CloudTrail" in loggrp:
         sourcetype="aws:cloudtrail"
     elif "VPC" in loggrp:
