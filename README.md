@@ -7,3 +7,6 @@ Function takes the AWS Kinesis Firehose ARN and uses this for "Host", the LogGro
 Index is not set in the function, but could easily be added by another function environment variable.
 
 Some use cases may require sourcetype to be set by the function - example: LogGroup prefix may identify sourcetype.
+
+
+Instructions to set this up are in the file here: SETUP.pdf
