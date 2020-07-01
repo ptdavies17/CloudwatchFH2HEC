@@ -50,9 +50,15 @@ The code below will:
 import base64
 import json
 import gzip
-import StringIO
 import boto3
 import os
+import sys
+
+IS_PY3 = sys.version_info[0] == 3
+if IS_PY3:
+    import io
+else:
+    import StringIO
 
 
 def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
@@ -98,7 +104,10 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
 def processRecords(records,arn):
     for r in records:
         data = base64.b64decode(r['data'])
-        striodata = StringIO.StringIO(data)
+        if IS_PY3:
+            striodata = io.BytesIO(data)
+        else:
+            striodata = StringIO.StringIO(data)
         with gzip.GzipFile(fileobj=striodata, mode='r') as f:
             data = json.loads(f.read())
 
@@ -114,7 +123,10 @@ def processRecords(records,arn):
             }
         elif data['messageType'] == 'DATA_MESSAGE':
             data = ''.join([transformLogEvent(e,data['owner'],arn,data['logGroup'],data['logStream'],data['subscriptionFilters'][0]) for e in data['logEvents']])
-            data = base64.b64encode(data)
+            if IS_PY3:
+                data = base64.b64encode(data.encode('utf-8')).decode()
+            else:
+                data = base64.b64encode(data)
             yield {
                 'data': data,
                 'result': 'Ok',
