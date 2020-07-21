@@ -82,6 +82,7 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
         sourcetype is set as -
             aws:cloudtrail if the Log Group name contains CloudTrail
             aws:cloudwatchlogs:vpcflow if the Log Group name contains VPC
+            aws:cloudwatchlogs:lambda if the Log Group starts with /aws/lambda/
             the environment variable contents of SPLUNK_SOURCETYPE for all other cases
     """
     
@@ -91,6 +92,8 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
         sourcetype="aws:cloudtrail"
     elif "VPC" in loggrp:
         sourcetype="aws:cloudwatchlogs:vpcflow"
+    elif loggrp.startswith("/aws/lambda/"):
+        sourcetype="aws:cloudwatchlogs:lambda"
     else:
         sourcetype=os.environ['SPLUNK_SOURCETYPE']
     
