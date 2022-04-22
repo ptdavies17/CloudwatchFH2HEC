@@ -1,18 +1,7 @@
-# Copyright 2014, Amazon.com, Inc. or its affiliates. All Rights Reserved.
-#
-# Licensed under the Amazon Software License (the "License").
-# You may not use this file except in compliance with the License.
-# A copy of the License is located at
-#
-#  http://aws.amazon.com/asl/
-#
-# or in the "license" file accompanying this file. This file is distributed
-# on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
-# express or implied. See the License for the specific language governing
-# permissions and limitations under the License.
-
 """
 For processing data sent to Firehose by Cloudwatch Logs subscription filters.
+
+Additional processing of message into format for Splunk HTTP Event Collector - Event input (not Raw)
 
 Cloudwatch Logs sends to Firehose records that look like this:
 
@@ -41,12 +30,6 @@ Cloudwatch Logs sends to Firehose records that look like this:
 
 The data is additionally compressed with GZIP.
 
-NOTE: It is suggested to test the cloudwatch logs processor lambda function in a pre-production environment to ensure
-the 6000000 limit meets your requirements. If your data contains a sizable number of records that are classified as
-Dropped/ProcessingFailed, then it is suggested to lower the 6000000 limit within the function to a smaller value
-(eg: 5000000) in order to confine to the 6MB (6291456 bytes) payload limit imposed by lambda. You can find Lambda
-quotas at https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html
-
 The code below will:
 
 1) Gunzip the data
@@ -60,19 +43,22 @@ The code below will:
 5) Concatenate the result from (4) together and set the result as the data of the record returned to Firehose. Note that
    this step will not add any delimiters. Delimiters should be appended by the logic within the transformLogEvent
    method.
-6) Any individual record exceeding 6,000,000 bytes in size after decompression and encoding is marked as
-   ProcessingFailed within the function. The original compressed record will be backed up to the S3 bucket
-   configured on the Firehose.
-7) Any additional records which exceed 6MB will be re-ingested back into Firehose.
-8) The retry count for intermittent failures during re-ingestion is set 20 attempts. If you wish to retry fewer number
-   of times for intermittent failures you can lower this value.
+6) Any additional records which exceed 6MB will be re-ingested back into Firehose.
+
 """
 
 import base64
 import json
 import gzip
-from io import BytesIO
 import boto3
+import os
+import sys
+
+IS_PY3 = sys.version_info[0] == 3
+if IS_PY3:
+    import io
+else:
+    import StringIO
 
 
 def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
@@ -111,14 +97,17 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
     return_message = '{"time": ' + str(log_event['timestamp']) + ',"host": "' + arn  +'","source": "' + filterName +':' + loggrp + '"'
     return_message = return_message + ',"sourcetype":"' + sourcetype  + '"'
     return_message = return_message + ',"event": ' + json.dumps(log_event['message']) + '}\n'
-    
-    return log_event['message'] + '\n'
+
+    return return_message + '\n'
 
 
 def processRecords(records,arn):
     for r in records:
         data = base64.b64decode(r['data'])
-        striodata = BytesIO(data)
+        if IS_PY3:
+            striodata = io.BytesIO(data)
+        else:
+            striodata = StringIO.StringIO(data)
         with gzip.GzipFile(fileobj=striodata, mode='r') as f:
             data = json.loads(f.read())
 
@@ -133,20 +122,16 @@ def processRecords(records,arn):
                 'recordId': recId
             }
         elif data['messageType'] == 'DATA_MESSAGE':
-            joinedData = ''.join([transformLogEvent(e,data['owner'],arn,data['logGroup'],data['logStream'],data['subscriptionFilters'][0]) for e in data['logEvents']])
-            dataBytes = joinedData.encode("utf-8")
-            encodedData = base64.b64encode(dataBytes)
-            if len(encodedData) <= 6000000:
-                yield {
-                    'data': encodedData,
-                    'result': 'Ok',
-                    'recordId': recId
-                }
+            data = ''.join([transformLogEvent(e,data['owner'],arn,data['logGroup'],data['logStream'],data['subscriptionFilters'][0]) for e in data['logEvents']])
+            if IS_PY3:
+                data = base64.b64encode(data.encode('utf-8')).decode()
             else:
-                yield {
-                    'result': 'ProcessingFailed',
-                    'recordId': recId
-                }
+                data = base64.b64encode(data)
+            yield {
+                'data': data,
+                'result': 'Ok',
+                'recordId': recId
+            }
         else:
             yield {
                 'result': 'ProcessingFailed',
@@ -234,11 +219,12 @@ def getReingestionRecord(isSas, reIngestionRecord):
         return {'Data': reIngestionRecord['data']}
 
 
-def lambda_handler(event, context):
+def handler(event, context):
     isSas = 'sourceKinesisStreamArn' in event
     streamARN = event['sourceKinesisStreamArn'] if isSas else event['deliveryStreamArn']
     region = streamARN.split(':')[3]
     streamName = streamARN.split('/')[1]
+    
     records = list(processRecords(event['records'],streamARN))
     projectedSize = 0
     dataByRecordId = {rec['recordId']: createReingestionRecord(isSas, rec) for rec in event['records']}
