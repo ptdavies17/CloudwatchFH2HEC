@@ -113,7 +113,7 @@ def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
     return_message = return_message + ',"sourcetype":"' + sourcetype  + '"'
     return_message = return_message + ',"event": ' + json.dumps(log_event['message']) + '}\n'
     
-    return log_event['message'] + '\n'
+    return return_message + '\n'
 
 
 def processRecords(records,arn):
