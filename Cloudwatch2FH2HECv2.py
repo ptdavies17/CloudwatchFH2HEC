@@ -68,7 +68,7 @@ import base64
 import json
 import gzip
 import boto3
-
+import os
 
 def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
     """Transform each log event.

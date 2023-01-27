@@ -73,6 +73,7 @@ import json
 import gzip
 from io import BytesIO
 import boto3
+import os
 
 
 def transformLogEvent(log_event,acct,arn,loggrp,logstrm,filterName):
