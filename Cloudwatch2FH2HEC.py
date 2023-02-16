@@ -71,6 +71,7 @@ The code below will:
 import base64
 import json
 import gzip
+import os
 from io import BytesIO
 import boto3
 import os
